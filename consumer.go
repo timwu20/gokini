@@ -427,7 +427,7 @@ func (kc *KinesisConsumer) getRecords(shardID string) {
 
 		if len(records) == 0 {
 			time.Sleep(time.Duration(kc.EmptyRecordBackoffMs) * time.Millisecond)
-		} else if !kc.DisableAutomaticCheckpoints {
+		} else if !kc.DisableAutomaticCheckpoints && len(getResp.Records) > 0 {
 			kc.Checkpoint(shardID, *getResp.Records[len(getResp.Records)-1].SequenceNumber)
 		}
 
@@ -446,7 +446,7 @@ func (kc *KinesisConsumer) getRecords(shardID string) {
 			shard.Lock()
 			shard.readyToBeClosed = true
 			shard.Unlock()
-			if !kc.DisableAutomaticCheckpoints {
+			if !kc.DisableAutomaticCheckpoints && len(getResp.Records) > 0 {
 				kc.Checkpoint(shardID, *getResp.Records[len(getResp.Records)-1].SequenceNumber)
 			}
 			return
