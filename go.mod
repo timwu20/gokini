@@ -1,4 +1,6 @@
-module github.com/patrobinson/gokini
+module github.com/timwu20/gokini
+
+go 1.15
 
 require (
 	github.com/aws/aws-sdk-go v1.19.38
