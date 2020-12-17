@@ -88,10 +88,17 @@ type KinesisConsumer struct {
 }
 
 // NewKinesisConsumer is constructor for KinesisConsumer
-func NewKinesisConsumer(config KinesisConsumerConfig, options ...func(*KinesisConsumer) error) *KinesisConsumer {
-	return &KinesisConsumer{
+func NewKinesisConsumer(config KinesisConsumerConfig, options ...func(*KinesisConsumer) error) (kc *KinesisConsumer, err error) {
+	kc = &KinesisConsumer{
 		KinesisConsumerConfig: config,
 	}
+	for _, opt := range options {
+		err = opt(kc)
+		if err != nil {
+			return
+		}
+	}
+	return
 }
 
 // KinesisAPI is used as option in NewKinesisConsumer
