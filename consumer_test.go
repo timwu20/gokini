@@ -125,7 +125,7 @@ func (k *mockKinesisClient) GetRecords(args *kinesis.GetRecordsInput) (*kinesis.
 			&kinesis.Record{
 				Data:           k.RecordData,
 				PartitionKey:   aws.String("abcdefg"),
-				SequenceNumber: aws.String(strings.Join([]string{"0000", string(k.numberRecordsSent)}, "")),
+				SequenceNumber: aws.String(strings.Join([]string{"0000", fmt.Sprintf("%d", k.numberRecordsSent)}, "")),
 			},
 		},
 	}, nil
@@ -146,7 +146,7 @@ func createConsumer(t *testing.T, numRecords int, checkpointFound bool, shutdown
 		ShardIteratorType: "TRIM_HORIZON",
 		RecordConsumer:    consumer,
 		checkpointer:      checkpointer,
-		svc:               kinesisSvc,
+		Svc:               kinesisSvc,
 		eventLoopSleepMs:  1,
 	}
 

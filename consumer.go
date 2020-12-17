@@ -55,8 +55,7 @@ type shardStatus struct {
 	sync.Mutex
 }
 
-// KinesisConsumer contains all the configuration and functions necessary to start the Kinesis Consumer
-type KinesisConsumer struct {
+type KinesisConsumerConfig struct {
 	StreamName                  string
 	ShardIteratorType           string
 	RecordConsumer              RecordConsumer
@@ -71,16 +70,37 @@ type KinesisConsumer struct {
 	DynamoWriteCapacityUnits    *int64
 	DynamoBillingMode           *string
 	Session                     *session.Session // Setting session means Retries is ignored
-	millisecondsBackoffClaim    int
-	eventLoopSleepMs            int
-	svc                         kinesisiface.KinesisAPI
-	checkpointer                Checkpointer
-	stop                        *chan struct{}
-	shardStatus                 map[string]*shardStatus
-	consumerID                  string
-	mService                    monitoringService
-	shardStealInProgress        bool
+}
+
+// KinesisConsumer contains all the configuration and functions necessary to start the Kinesis Consumer
+type KinesisConsumer struct {
+	KinesisConsumerConfig
+	millisecondsBackoffClaim int
+	eventLoopSleepMs         int
+	kinesisAPI               kinesisiface.KinesisAPI
+	checkpointer             Checkpointer
+	stop                     *chan struct{}
+	shardStatus              map[string]*shardStatus
+	consumerID               string
+	mService                 monitoringService
+	shardStealInProgress     bool
 	sync.WaitGroup
+}
+
+// NewKinesisConsumer is constructor for KinesisConsumer
+func NewKinesisConsumer(config KinesisConsumerConfig, options ...func(*KinesisConsumer) error) *KinesisConsumer {
+	return &KinesisConsumer{
+		KinesisConsumerConfig: config,
+	}
+}
+
+// KinesisAPI is used as option in NewKinesisConsumer
+func KinesisAPI(api kinesisiface.KinesisAPI) (fn func(*KinesisConsumer) error) {
+	fn = func(kc *KinesisConsumer) error {
+		kc.kinesisAPI = api
+		return nil
+	}
+	return
 }
 
 var defaultRetries = 5
@@ -128,11 +148,11 @@ func (kc *KinesisConsumer) StartConsumer() error {
 		}
 	}
 
-	if kc.svc == nil && kc.checkpointer == nil {
+	if kc.kinesisAPI == nil && kc.checkpointer == nil {
 		if endpoint := os.Getenv("KINESIS_ENDPOINT"); endpoint != "" {
 			kc.Session.Config.Endpoint = aws.String(endpoint)
 		}
-		kc.svc = kinesis.New(kc.Session)
+		kc.kinesisAPI = kinesis.New(kc.Session)
 		kc.checkpointer = &DynamoCheckpoint{
 			ReadCapacityUnits:  kc.DynamoReadCapacityUnits,
 			WriteCapacityUnits: kc.DynamoWriteCapacityUnits,
@@ -251,7 +271,7 @@ func (kc *KinesisConsumer) getShardIDs(startShardID string) error {
 		args.ExclusiveStartShardId = aws.String(startShardID)
 	}
 
-	streamDesc, err := kc.svc.DescribeStream(args)
+	streamDesc, err := kc.kinesisAPI.DescribeStream(args)
 	if err != nil {
 		return err
 	}
@@ -294,7 +314,7 @@ func (kc *KinesisConsumer) getShardIterator(shard *shardStatus) (*string, error)
 			ShardIteratorType: &kc.ShardIteratorType,
 			StreamName:        &kc.StreamName,
 		}
-		iterResp, err := kc.svc.GetShardIterator(shardIterArgs)
+		iterResp, err := kc.kinesisAPI.GetShardIterator(shardIterArgs)
 		if err != nil {
 			return nil, err
 		}
@@ -307,7 +327,7 @@ func (kc *KinesisConsumer) getShardIterator(shard *shardStatus) (*string, error)
 		StartingSequenceNumber: &shard.Checkpoint,
 		StreamName:             &kc.StreamName,
 	}
-	iterResp, err := kc.svc.GetShardIterator(shardIterArgs)
+	iterResp, err := kc.kinesisAPI.GetShardIterator(shardIterArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +380,7 @@ func (kc *KinesisConsumer) getRecords(shardID string) {
 		getRecordsArgs := &kinesis.GetRecordsInput{
 			ShardIterator: shardIterator,
 		}
-		getResp, err := kc.svc.GetRecords(getRecordsArgs)
+		getResp, err := kc.kinesisAPI.GetRecords(getRecordsArgs)
 		if err != nil {
 			if awsErr, ok := err.(awserr.Error); ok {
 				if awsErr.Code() == kinesis.ErrCodeProvisionedThroughputExceededException || awsErr.Code() == ErrCodeKMSThrottlingException {
@@ -451,7 +471,7 @@ func (kc *KinesisConsumer) Checkpoint(shardID string, sequenceNumber string) err
 }
 
 func (kc *KinesisConsumer) shardIsEmpty(shard *shardStatus) (empty bool, err error) {
-	iterResp, err := kc.svc.GetShardIterator(&kinesis.GetShardIteratorInput{
+	iterResp, err := kc.kinesisAPI.GetShardIterator(&kinesis.GetShardIteratorInput{
 		ShardId:                &shard.ID,
 		ShardIteratorType:      aws.String("AFTER_SEQUENCE_NUMBER"),
 		StartingSequenceNumber: &shard.Checkpoint,
@@ -460,7 +480,7 @@ func (kc *KinesisConsumer) shardIsEmpty(shard *shardStatus) (empty bool, err err
 	if err != nil {
 		return
 	}
-	recordsResp, err := kc.svc.GetRecords(&kinesis.GetRecordsInput{
+	recordsResp, err := kc.kinesisAPI.GetRecords(&kinesis.GetRecordsInput{
 		ShardIterator: iterResp.ShardIterator,
 	})
 	if err != nil {
