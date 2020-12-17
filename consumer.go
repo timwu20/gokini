@@ -155,11 +155,13 @@ func (kc *KinesisConsumer) StartConsumer() error {
 		}
 	}
 
-	if kc.kinesisAPI == nil && kc.checkpointer == nil {
+	if kc.kinesisAPI == nil {
 		if endpoint := os.Getenv("KINESIS_ENDPOINT"); endpoint != "" {
 			kc.Session.Config.Endpoint = aws.String(endpoint)
 		}
 		kc.kinesisAPI = kinesis.New(kc.Session)
+	}
+	if kc.checkpointer == nil {
 		kc.checkpointer = &DynamoCheckpoint{
 			ReadCapacityUnits:  kc.DynamoReadCapacityUnits,
 			WriteCapacityUnits: kc.DynamoWriteCapacityUnits,
